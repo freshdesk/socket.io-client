@@ -1,4 +1,4 @@
-!function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.io=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
+!function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.fdio=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
 
 module.exports = _dereq_('./lib/');
 
@@ -17,7 +17,7 @@ var debug = _dereq_('debug')('socket.io-client');
  * Module exports.
  */
 
-module.exports = exports = lookup;
+module.exports = exports = IO;
 
 /**
  * Managers cache.
@@ -38,7 +38,9 @@ var cache = exports.managers = {};
  * @api public
  */
 
-function lookup(uri, opts) {
+function IO (uri, hashedParams, opts) {
+  if (!(this instanceof IO)) return new IO(uri, hashedParams, opts);
+
   if (typeof uri == 'object') {
     opts = uri;
     uri = undefined;
@@ -47,23 +49,25 @@ function lookup(uri, opts) {
   opts = opts || {};
 
   var parsed = url(uri);
-  var source = parsed.source;
-  var id = parsed.id;
+
+  this.id = parsed.id;
+  this.hashedParams = hashedParams;
+  this.opts = opts;
+}
+
+IO.prototype.connect = function(nsp) {
+  nsp = '/' + nsp;
+  var id = this.id;
+  var source = id + nsp;
   var io;
 
-  if (opts.forceNew || opts['force new connection'] || false === opts.multiplex) {
-    debug('ignoring socket cache for %s', source);
-    io = Manager(source, opts);
-  } else {
-    if (!cache[id]) {
+  if (!cache[id]) {
       debug('new io instance for %s', source);
-      cache[id] = Manager(source, opts);
-    }
-    io = cache[id];
+      cache[id] = Manager(id, this.hashedParams, this.opts);
   }
-
-  return io.socket(parsed.path);
-}
+  io = cache[id];
+  return io.socket(nsp);
+};
 
 /**
  * Protocol version.
@@ -72,15 +76,6 @@ function lookup(uri, opts) {
  */
 
 exports.protocol = parser.protocol;
-
-/**
- * `connect`.
- *
- * @param {String} uri
- * @api public
- */
-
-exports.connect = lookup;
 
 /**
  * Expose constructors for standalone build.
@@ -123,8 +118,8 @@ module.exports = Manager;
  * @api public
  */
 
-function Manager(uri, opts){
-  if (!(this instanceof Manager)) return new Manager(uri, opts);
+function Manager(uri, hashedParams, opts){
+  if (!(this instanceof Manager)) return new Manager(uri, hashedParams, opts);
   if (uri && ('object' == typeof uri)) {
     opts = uri;
     uri = undefined;
@@ -140,6 +135,7 @@ function Manager(uri, opts){
   this.reconnectionDelay(opts.reconnectionDelay || 1000);
   this.reconnectionDelayMax(opts.reconnectionDelayMax || 5000);
   this.randomizationFactor(opts.randomizationFactor || 0.5);
+  this.hashedParams = hashedParams;
   this.backoff = new Backoff({
     min: this.reconnectionDelay(),
     max: this.reconnectionDelayMax(),
@@ -364,17 +360,21 @@ Manager.prototype.onopen = function(){
   this.cleanup();
 
   // mark as open
-  this.readyState = 'open';
-  this.emit('open');
-
-  // add new subs
+  this.readyState = 'authorizing';
   var socket = this.engine;
+  var packet = { type: parser.EVENT, data: ['authorize', JSON.stringify(this.hashedParams)] };
+  this.packet(packet);
   this.subs.push(on(socket, 'data', bind(this, 'ondata')));
   this.subs.push(on(this.decoder, 'decoded', bind(this, 'ondecoded')));
   this.subs.push(on(socket, 'error', bind(this, 'onerror')));
   this.subs.push(on(socket, 'close', bind(this, 'onclose')));
 };
 
+Manager.prototype.onauthorized = function() {
+  this.emit('open');
+
+  this.readyState = 'open';
+}
 /**
  * Called with data.
  *
@@ -392,7 +392,11 @@ Manager.prototype.ondata = function(data){
  */
 
 Manager.prototype.ondecoded = function(packet) {
-  this.emit('packet', packet);
+  if (packet.data && (packet.data[0] == 'authorized') && packet.nsp == '/') {
+    this.onauthorized();
+  } else {
+    this.emit('packet', packet);
+  }
 };
 
 /**
@@ -5037,7 +5041,7 @@ module.exports = (function() {
 			return continuationByte & 0x3F;
 		}
 
-		// If we end up here, it’s not a continuation byte
+		// If we end up here, itâs not a continuation byte
 		throw Error('Invalid continuation byte');
 	}
 

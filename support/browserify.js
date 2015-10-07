@@ -24,7 +24,7 @@ function build(fn){
   opts.builtins = false;
   opts.entries = [path];
   var bundle = {};
-  bundle.standalone = 'io';
+  bundle.standalone = 'fdio';
   bundle.insertGlobalVars = { global: glob };
   browserify(opts).bundle(bundle, fn);
 }
