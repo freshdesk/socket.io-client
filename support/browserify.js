@@ -26,7 +26,7 @@ function build(fn){
     builtins: false,
     entries: [ path ],
     insertGlobalVars: { global: glob },
-    standalone: 'agentio'
+    standalone: 'helpkitio'
   })
   .exclude('ws')
   .bundle();
